@@ -1,0 +1,91 @@
+# docker-compose.test.yml — Integration test runner for OrderFlow
+# Settimana 4, Giorno 3 — Docker Testing Pipeline
+#
+# This file extends the main docker-compose.yml to add an integration-test
+# service that runs inside the same Docker network as the application.
+#
+# Usage from Jenkinsfile:
+#   docker-compose -f docker-compose.yml -f docker-compose.test.yml run --rm integration-test
+#
+# Why a dedicated test container?
+#   When Jenkins runs inside a container (Docker Socket Mounting), it cannot
+#   reach sibling containers via localhost. A test container on the same
+#   Compose network can reach services by their service name (e.g.
+#   http://order-service:8000), making tests portable and self-contained.
+
+services:
+  integration-test:
+    image: curlimages/curl:8.12.1
+    # No depends_on here — the Jenkinsfile waits for healthy services
+    # before launching this container, which is more reliable in CI.
+    networks:
+      - orderflow-net
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "=== OrderFlow Integration Tests ==="
+        echo ""
+
+        PASSED=0
+        FAILED=0
+
+        run_test() {
+          local name="$$1"
+          shift
+          printf "  Test: %-40s " "$$name"
+          if "$@" > /dev/null 2>&1; then
+            echo "PASS"
+            PASSED=$$((PASSED + 1))
+          else
+            echo "FAIL"
+            FAILED=$$((FAILED + 1))
+          fi
+        }
+
+        # --- Health checks ---
+        run_test "order-service health" \
+          curl -sf http://order-service:8000/health
+
+        run_test "inventory-service health" \
+          curl -sf http://inventory-service:8000/health
+
+        run_test "notification-service health" \
+          curl -sf http://notification-service:8000/health
+
+        # --- Cross-service order flow ---
+        ORDER_RESPONSE=$$(curl -s -X POST http://order-service:8000/api/orders \
+          -H "Content-Type: application/json" \
+          -d '{"customer_name":"CI Integration","items":[{"product_id":"PROD-001","quantity":1}]}')
+        ORDER_ID=$$(echo "$$ORDER_RESPONSE" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+        run_test "Create order (got ID)" \
+          test -n "$$ORDER_ID"
+
+        run_test "Get order by ID" \
+          curl -sf "http://order-service:8000/api/orders/$$ORDER_ID"
+
+        run_test "List inventory products" \
+          curl -sf http://inventory-service:8000/api/products
+
+        # Wait briefly for async notification processing
+        sleep 2
+
+        run_test "Notification received" \
+          curl -sf http://notification-service:8000/api/notifications
+
+        # --- Report ---
+        TOTAL=$$((PASSED + FAILED))
+        echo ""
+        echo "=========================================="
+        echo "  Integration Test Report"
+        echo "  Total:  $$TOTAL"
+        echo "  Passed: $$PASSED"
+        echo "  Failed: $$FAILED"
+        echo "=========================================="
+
+        if [ "$$FAILED" -gt 0 ]; then
+          echo "INTEGRATION TESTS FAILED"
+          exit 1
+        fi
+        echo "ALL INTEGRATION TESTS PASSED"
