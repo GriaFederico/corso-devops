@@ -296,11 +296,11 @@ pipeline {
                         for svc in order-service inventory-service notification-service; do
                             echo "--- Pushing ${svc} ---"
                             docker tag ${PROJECT}/${svc}:${IMAGE_TAG} \
-                                ${ECR_REGISTRY}/${svc}:${IMAGE_TAG}
+                                ${ECR_REGISTRY}/corso-devops-${svc}:${IMAGE_TAG}
                             docker tag ${PROJECT}/${svc}:latest \
-                                ${ECR_REGISTRY}/${svc}:latest
-                            docker push ${ECR_REGISTRY}/${svc}:${IMAGE_TAG}
-                            docker push ${ECR_REGISTRY}/${svc}:latest
+                                ${ECR_REGISTRY}/corso-devops-${svc}:latest
+                            docker push ${ECR_REGISTRY}/corso-devops-${svc}:${IMAGE_TAG}
+                            docker push ${ECR_REGISTRY}/corso-devops-${svc}:latest
                             echo "${svc} pushed successfully"
                         done
 
@@ -400,3 +400,4 @@ pipeline {
 }
 
  
+
