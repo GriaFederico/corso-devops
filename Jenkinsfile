@@ -328,15 +328,15 @@ pipeline {
                         echo "=== Verifying images in ECR ==="
                         for svc in order-service inventory-service notification-service; do
                             MANIFEST=$(aws ecr batch-get-image \
-                                --repository-name ${svc} \
+                                --repository-name corso-devops-${svc} \
                                 --image-ids imageTag=${IMAGE_TAG} \
                                 --query 'images[0].imageManifest' \
                                 --output text --region eu-central-1 2>/dev/null)
                             if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
-                                echo "FAIL: ${svc}:${IMAGE_TAG} not found in ECR"
+                                echo "FAIL: corso-devops-${svc}:${IMAGE_TAG} not found in ECR"
                                 exit 1
                             fi
-                            echo "PASS: ${svc}:${IMAGE_TAG} verified in ECR"
+                            echo "PASS: corso-devops-${svc}:${IMAGE_TAG} verified in ECR"
                         done
                         echo "=== ECR verification passed ==="
                     '''
@@ -399,6 +399,7 @@ pipeline {
 }
 
  
+
 
 
 
