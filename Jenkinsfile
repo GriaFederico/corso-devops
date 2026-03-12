@@ -33,19 +33,12 @@ pipeline {
                         sh '''
 
                     echo "=========================================="
-
                     echo "  OrderFlow CI Pipeline"
-
                     echo "=========================================="
-
                     echo "Build:       #${BUILD_NUMBER}"
-
                     echo "Branch:      ${GIT_BRANCH}"
-
                     echo "Commit:      $(git log --oneline -1)"
-
                     echo "Environment: ${ENVIRONMENT}"
-
                     echo "=========================================="
 
                 '''
@@ -145,7 +138,7 @@ pipeline {
                             docker rm -f "$CONTAINER" 2>/dev/null || true
                             docker create --name "$CONTAINER" --user root \
                                 -e COVERAGE_FILE=/tmp/.coverage \
-                                ${PROJECT}/order-service:latest \
+                                ${PROJECT_NAME}/order-service:latest \
                                 sh -c "python -m pytest tests/ -v --tb=short \
                                     --junitxml=/tmp/order-results.xml \
                                     --cov=. --cov-report=term \
@@ -167,7 +160,7 @@ pipeline {
                             docker rm -f "$CONTAINER" 2>/dev/null || true
                             docker create --name "$CONTAINER" --user root \
                                 -e COVERAGE_FILE=/tmp/.coverage \
-                                ${PROJECT}/inventory-service:latest \
+                                ${PROJECT_NAME}/inventory-service:latest \
                                 sh -c "python -m pytest tests/ -v --tb=short \
                                     --junitxml=/tmp/inventory-results.xml \
                                     --cov=. --cov-report=term \
@@ -189,7 +182,7 @@ pipeline {
                             docker rm -f "$CONTAINER" 2>/dev/null || true
                             docker create --name "$CONTAINER" --user root \
                                 -e COVERAGE_FILE=/tmp/.coverage \
-                                ${PROJECT}/notification-service:latest \
+                                ${PROJECT_NAME}/notification-service:latest \
                                 sh -c "python -m pytest tests/ -v --tb=short \
                                     --junitxml=/tmp/notification-results.xml \
                                     --cov=. --cov-report=term \
@@ -295,9 +288,9 @@ pipeline {
                         echo "=== Pushing images ==="
                         for svc in order-service inventory-service notification-service; do
                             echo "--- Pushing ${svc} ---"
-                            docker tag ${PROJECT}/${svc}:${IMAGE_TAG} \
+                            docker tag ${PROJECT_NAME}/${svc}:${IMAGE_TAG} \
                                 ${ECR_REGISTRY}/corso-devops-${svc}:${IMAGE_TAG}
-                            docker tag ${PROJECT}/${svc}:latest \
+                            docker tag ${PROJECT_NAME}/${svc}:latest \
                                 ${ECR_REGISTRY}/corso-devops-${svc}:latest
                             docker push ${ECR_REGISTRY}/corso-devops-${svc}:${IMAGE_TAG}
                             docker push ${ECR_REGISTRY}/corso-devops-${svc}:latest
@@ -400,4 +393,5 @@ pipeline {
 }
 
  
+
 
