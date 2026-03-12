@@ -53,18 +53,16 @@ pipeline {
                 sh '''
                     echo "=== Installing required tools ==="
                     TOOLS_DIR="${JENKINS_HOME}/bin"
-                    mkdir -p "${TOOLS_DIR}"
- 
-                    # AWS CLI v2
-                    if [ -x "${TOOLS_DIR}/aws" ]; then
-                        echo "PASS: AWS CLI already installed ($(${TOOLS_DIR}/aws --version))"
-                    else
-                        echo "Installing AWS CLI v2..."
+                    mkdir -p "${TOOLS_DIR}"            
+                    
+                    # AWS CLI v2 - installazione utente (senza sudo)
+                    if ! command -v aws >/dev/null 2>&1; then
                         curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
-                        unzip -qo /tmp/awscliv2.zip -d /tmp
-                        /tmp/aws/install --install-dir "${TOOLS_DIR}/aws-cli" --bin-dir "${TOOLS_DIR}" --update
+                        cd /tmp && unzip -qo awscliv2.zip
+                        chmod +x /tmp/aws/install
+                        /tmp/aws/install --install-dir "${TOOLS_DIR}/aws-cli" --bin-dir  ${TOOLS_DIR} --update
                         rm -rf /tmp/awscliv2.zip /tmp/aws
-                        echo "Installed: $(aws --version)"
+                        echo "Installed: $($HOME/bin/aws --version)"
                     fi
 
                     if ! command -v docker-compose >/dev/null 2>&1; then
@@ -401,6 +399,7 @@ pipeline {
 }
 
  
+
 
 
 
