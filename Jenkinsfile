@@ -5,6 +5,7 @@ pipeline {
         BUILD_TAG = "${env.BUILD_NUMBER}"
         PROJECT_NAME = "corso-devops"
         PATH= "${JENKINS_HOME}/bin:${env.PATH}"
+        AWS_REGION    = 'eu-central-1'
     }
 
     options {
@@ -285,7 +286,7 @@ pipeline {
                         usernameVariable: 'AWS_ACCESS_KEY_ID',
                         passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                     ),
-                    string(credentialsId: 'ecr-registry-url', variable: 'ECR_REGISTRY')
+                    string(credentialsId: 'ecr-registry-URL', variable: 'ECR_REGISTRY')
                 ]) {
                     sh '''
                         echo "=== Authenticating with ECR ==="
@@ -323,7 +324,7 @@ pipeline {
                         usernameVariable: 'AWS_ACCESS_KEY_ID',
                         passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                     ),
-                    string(credentialsId: 'ecr-registry-url', variable: 'ECR_REGISTRY')
+                    string(credentialsId: 'ecr-registry-URL', variable: 'ECR_REGISTRY')
                 ]) {
                     sh '''
                         echo "=== Verifying images in ECR ==="
@@ -400,6 +401,7 @@ pipeline {
 }
 
  
+
 
 
 
