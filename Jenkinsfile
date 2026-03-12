@@ -5,7 +5,7 @@ pipeline {
         BUILD_TAG = "${env.BUILD_NUMBER}"
         PROJECT_NAME = "corso-devops"
         PATH= "${JENKINS_HOME}/bin:${env.PATH}"
-        AWS_REGION    = 'eu-central-1'
+        // AWS_REGION    = 'eu-central-1'
     }
 
     options {
@@ -290,7 +290,7 @@ pipeline {
                 ]) {
                     sh '''
                         echo "=== Authenticating with ECR ==="
-                        aws ecr get-login-password --region ${AWS_REGION} \
+                        aws ecr get-login-password --region eu-central-1 \
                             | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
                         echo "=== Pushing images ==="
@@ -333,7 +333,7 @@ pipeline {
                                 --repository-name ${svc} \
                                 --image-ids imageTag=${IMAGE_TAG} \
                                 --query 'images[0].imageManifest' \
-                                --output text --region ${AWS_REGION} 2>/dev/null)
+                                --output text --region eu-central-1 2>/dev/null)
                             if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
                                 echo "FAIL: ${svc}:${IMAGE_TAG} not found in ECR"
                                 exit 1
@@ -401,6 +401,7 @@ pipeline {
 }
 
  
+
 
 
 
