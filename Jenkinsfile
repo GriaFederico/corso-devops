@@ -65,7 +65,14 @@ pipeline {
                         rm -rf /tmp/awscliv2.zip /tmp/aws
                         echo "Installed: $(aws --version)"
                     fi
- 
+
+                    if ! command -v docker-compose >/dev/null 2>&1; then
+                        echo "Installazione docker-compose..."
+                        curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o "${TOOLS_DIR}/docker-compose"
+                        chmod +x "${TOOLS_DIR}/docker-compose"
+                        export PATH="${TOOLS_DIR}:$PATH"
+                        echo "docker-compose installato: $(docker-compose --version)"
+                    fi
                     echo "=== Tools ready ==="
                 '''
             }
@@ -393,5 +400,6 @@ pipeline {
 }
 
  
+
 
 
