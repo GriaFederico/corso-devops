@@ -1,65 +1,84 @@
-pipeline{
+pipeline {
     agent any
 
     environment{
-        BUILD_TAG = "${env.BUILD_NUMBER}" // numero BUILD
-        // PROJECT_NAME = "corso-devops"  
-        PROJECT_NAME = "OrderFlow"     //  nome progetto
+        BUILD_TAG = "${env.BUILD_NUMBER}"
+        PROJECT_NAME = "corso-devops"
+        PATH= "${JENKINS_HOME}/bin:${env.PATH}"
     }
 
     options {
-        timeout(time: 30, unit: 'MINUTES')                // Annulla il build se supera 30 minuti (evita build "appesi")
-        disableConcurrentBuilds()                          // Impedisce 2 build dello stesso job in parallelo
-        buildDiscarder(logRotator(numToKeepStr: '10'))     // Tiene solo gli ultimi 10 build nella cronologia (risparmiare disco)
-        timestamps()                                       // Aggiunge data/ora a ogni riga della Console Output
-    }   
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
 
-    //PARAMETRI DELLA PIPELINE PER LA SCELTA DELL'AMBIENTE E SE ESEGUIRE I TEST O MENO
+        timestamps()
+    }
+
     parameters{
         booleanParam(name: 'SKIP_TESTS', defaultValue: false, description: 'Esegui i test dopo la build?')
-        choice(name: 'ENVIRONMENT', choices: ['dev', 'staging', 'prod'], description: 'Seleziona l\'ambiente di deploy')
+        choice(name: 'Environment', choices: ['dev', 'staging', 'prod'], description: 'Seleziona l\'ambiente di deploy')
+    
     }
 
     stages{
-        stage('Checkout'){
-            steps{
+        stage('Checkout') {
+            steps {
                 checkout scm
-                sh '''
+ 
+                script {
+                    env.GIT_SHORT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    env.IMAGE_TAG     = "${BUILD_NUMBER}-${GIT_SHORT_SHA}"
+                }
+                        sh '''
+
                     echo "=========================================="
+
                     echo "  OrderFlow CI Pipeline"
+
                     echo "=========================================="
+
                     echo "Build:       #${BUILD_NUMBER}"
+
                     echo "Branch:      ${GIT_BRANCH}"
+
                     echo "Commit:      $(git log --oneline -1)"
+
                     echo "Environment: ${ENVIRONMENT}"
+
                     echo "=========================================="
+
                 '''
-                echo "checkout completato"
-            }            
+ 
+            echo "Checkout completato"
+            }
         }
+
         stage('Setup Tools') {
             steps {
                 sh '''
                     echo "=== Installing required tools ==="
                     TOOLS_DIR="${JENKINS_HOME}/bin"
-                    mkdir -p "${TOOLS_DIR}"            
-                    
-                    # AWS CLI v2 - installazione utente (senza sudo)
-                    if ! command -v aws >/dev/null 2>&1; then
+                    mkdir -p "${TOOLS_DIR}"
+ 
+                    # AWS CLI v2
+                    if [ -x "${TOOLS_DIR}/aws" ]; then
+                        echo "PASS: AWS CLI already installed ($(${TOOLS_DIR}/aws --version))"
+                    else
+                        echo "Installing AWS CLI v2..."
                         curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
-                        cd /tmp && unzip -qo awscliv2.zip
-                        chmod +x /tmp/aws/install
-                        /tmp/aws/install --install-dir "${TOOLS_DIR}/aws-cli" --bin-dir  ${TOOLS_DIR} --update
+                        unzip -qo /tmp/awscliv2.zip -d /tmp
+                        /tmp/aws/install --install-dir "${TOOLS_DIR}/aws-cli" --bin-dir "${TOOLS_DIR}" --update
                         rm -rf /tmp/awscliv2.zip /tmp/aws
-                        echo "Installed: $($HOME/bin/aws --version)"
+                        echo "Installed: $(aws --version)"
                     fi
-                    
+ 
                     echo "=== Tools ready ==="
-                   
-                    '''
+                '''
             }
         }
-        stage('Validate'){
+
+        stage('Validation'){
             steps{
                 sh '''
                     echo "=== Validating project structure ==="
@@ -85,42 +104,32 @@ pipeline{
                         exit 1
                     fi
                     echo "Validation PASSED"
-                ''' 
+                '''
             }
         }
-        // PRIMA (Giorno 2) — 3 stage separati, sequenziali:
-        stage('build order service') {
-        steps { sh 'docker build -t ${PROJECT}/order-service:${BUILD_TAG} ./order-service' }
-        }
-        stage('build inventory service') {
-            steps { sh 'docker build -t ${PROJECT}/inventory-service:${BUILD_TAG} ./inventory-service' }
-        }
-        stage('build notification service') {
-                steps { sh 'docker build -t ${PROJECT}/notification-service:${BUILD_TAG} ./notification-service' }
-        }
-        // DOPO (Giorno 3) — 1 stage contenitore con 3 sub-stage paralleli:
+
         stage('Build Images') {
             parallel {
                 stage('Build order-service') {
                     steps {
-                            dir('order-service') {
-                                    sh 'docker build -t corso-devops/order-service:${IMAGE_TAG} -t corso-devops/order-service:latest .'
-                            }
+                        dir('order-service') {
+                            sh 'docker build -t corso-devops/order-service:${IMAGE_TAG} -t corso-devops/order-service:latest .'
                         }
+                    }
                 }
                 stage('Build inventory-service') {
-                        steps {
-                            dir('inventory-service') {
-                                    sh 'docker build -t corso-devops/inventory-service:${IMAGE_TAG} -t corso-devops/inventory-service:latest .'
-                            }
+                    steps {
+                        dir('inventory-service') {
+                            sh 'docker build -t corso-devops/inventory-service:${IMAGE_TAG} -t corso-devops/inventory-service:latest .'
                         }
+                    }
                 }
                 stage('Build notification-service') {
-                        steps {
-                            dir('notification-service') {
-                                    sh 'docker build -t corso-devops/notification-service:${IMAGE_TAG} -t corso-devops/notification-service:latest .'
-                            }
+                    steps {
+                        dir('notification-service') {
+                            sh 'docker build -t corso-devops/notification-service:${IMAGE_TAG} -t corso-devops/notification-service:latest .'
                         }
+                    }
                 }
             }
         }
@@ -194,60 +203,200 @@ pipeline{
                     }
                 }
             }
-        }   
-        stage('Push to ECR') {
+        }
+
+        stage('Integration Test') {
             steps {
-                script {
-                    env.PATH = "/var/jenkins_home/bin:${env.PATH}"
+                sh '''
+                    echo "=== Starting Integration Tests ==="
+
+                    # 1. Start postgres first and wait for it to be healthy
+                    docker-compose -f docker-compose.yml up -d postgres
+                    echo "Waiting for postgres to be healthy..."
+                    PGWAIT=0
+                    while [ $PGWAIT -lt 60 ]; do
+                        PG_STATUS=$(docker inspect --format='{{.State.Health.Status}}' orderflow-postgres 2>/dev/null || echo "missing")
+                        echo "  [${PGWAIT}s] postgres: $PG_STATUS"
+                        if [ "$PG_STATUS" = "healthy" ]; then
+                            break
+                        fi
+                        sleep 3
+                        PGWAIT=$((PGWAIT + 3))
+                    done
+                    if [ "$PG_STATUS" != "healthy" ]; then
+                        echo "FAIL: postgres did not become healthy within 60s"
+                        docker logs orderflow-postgres --tail 30 2>&1 || true
+                        exit 1
+                    fi
+
+                    # 2. Start application services (postgres is already healthy)
+                    docker-compose -f docker-compose.yml up -d order-service inventory-service notification-service
+
+                    # 3. Wait for all 4 services to be healthy (up to 90s)
+                    echo "Waiting for application services to become healthy..."
+                    MAX_WAIT=90
+                    ELAPSED=0
+                    ALL_HEALTHY=false
+                    while [ $ELAPSED -lt $MAX_WAIT ]; do
+                        HEALTHY=$(docker ps --filter "name=orderflow" --filter "health=healthy" -q | wc -l)
+                        echo "  [${ELAPSED}s] Healthy containers: $HEALTHY / 4"
+                        if [ "$HEALTHY" -ge 4 ]; then
+                            ALL_HEALTHY=true
+                            echo "All services healthy!"
+                            break
+                        fi
+                        sleep 5
+                        ELAPSED=$((ELAPSED + 5))
+                    done
+
+                    if [ "$ALL_HEALTHY" != "true" ]; then
+                        echo "FAIL: Services did not become healthy within ${MAX_WAIT}s"
+                        docker ps --filter "name=orderflow"
+                        for SVC in orderflow-postgres orderflow-order orderflow-inventory orderflow-notification; do
+                            echo "--- Logs for $SVC ---"
+                            docker logs "$SVC" --tail 20 2>&1 || true
+                        done
+                        exit 1
+                    fi
+
+                    # 4. Run the integration test container on the same network
+                    docker-compose \
+                        -f docker-compose.yml \
+                        -f docker-compose.test.yml \
+                        run --rm integration-test
+                    echo "=== All integration tests passed! ==="
+                '''
+            }
+            post {
+                always {
+                    sh 'docker-compose -f docker-compose.yml -f docker-compose.test.yml down -v --remove-orphans || true'
                 }
+            }
+        }
+ 
+        stage('Push to ECR') {
+            when {
+                branch 'main'
+            }
+            steps {
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'aws-credentials',
                         usernameVariable: 'AWS_ACCESS_KEY_ID',
                         passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                     ),
-                    string(
-                        credentialsId: 'ecr-registry-URL',
-                        variable: 'ECR_REGISTRY'
-                    )
+                    string(credentialsId: 'ecr-registry-url', variable: 'ECR_REGISTRY')
                 ]) {
                     sh '''
-                        echo "=== Logging into ECR ==="
-                        aws ecr get-login-password --region eu-central-1 | \
-                            docker login --username AWS \
-                            --password-stdin ${ECR_REGISTRY}
- 
+                        echo "=== Authenticating with ECR ==="
+                        aws ecr get-login-password --region ${AWS_REGION} \
+                            | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
                         echo "=== Pushing images ==="
-                        for svc in order-service inventory-service notification-service; do                         
-                            docker tag ${PROJECT_NAME}/${svc}:${BUILD_TAG} ${ECR_REGISTRY}/corso-devops-${svc}:${BUILD_TAG}
-                            docker tag ${PROJECT_NAME}/${svc}:latest ${ECR_REGISTRY}/corso-devops-${svc}:latest
-                            
-                            docker push ${ECR_REGISTRY}/corso-devops-${svc}:${BUILD_TAG}
-                            docker push ${ECR_REGISTRY}/corso-devops-${svc}:latest
-                            
+                        for svc in order-service inventory-service notification-service; do
+                            echo "--- Pushing ${svc} ---"
+                            docker tag ${PROJECT}/${svc}:${IMAGE_TAG} \
+                                ${ECR_REGISTRY}/${svc}:${IMAGE_TAG}
+                            docker tag ${PROJECT}/${svc}:latest \
+                                ${ECR_REGISTRY}/${svc}:latest
+                            docker push ${ECR_REGISTRY}/${svc}:${IMAGE_TAG}
+                            docker push ${ECR_REGISTRY}/${svc}:latest
                             echo "${svc} pushed successfully"
                         done
+
+                        echo "=== All images pushed to ECR ==="
                     '''
                 }
-            }        
-        }        
+            }
+        }
+
+        // === STAGE NUOVO NEL GIORNO 3 ===
+        // Verifica che le immagini pushate siano effettivamente presenti su ECR
+        stage('Verify ECR') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'aws-credentials',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ),
+                    string(credentialsId: 'ecr-registry-url', variable: 'ECR_REGISTRY')
+                ]) {
+                    sh '''
+                        echo "=== Verifying images in ECR ==="
+                        for svc in order-service inventory-service notification-service; do
+                            MANIFEST=$(aws ecr batch-get-image \
+                                --repository-name ${svc} \
+                                --image-ids imageTag=${IMAGE_TAG} \
+                                --query 'images[0].imageManifest' \
+                                --output text --region ${AWS_REGION} 2>/dev/null)
+                            if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
+                                echo "FAIL: ${svc}:${IMAGE_TAG} not found in ECR"
+                                exit 1
+                            fi
+                            echo "PASS: ${svc}:${IMAGE_TAG} verified in ECR"
+                        done
+                        echo "=== ECR verification passed ==="
+                    '''
+                }
+            }
+        }
     }
-    post{
+
+    // === POST BLOCK EVOLUTO DAL GIORNO 2 ===
+    // Giorno 2 aveva: success/failure echo + cleanup immagini + cleanWs()
+    // Giorno 3 aggiunge: JUnit report parsing, artifact archiving, cleanup migliorato
+    post {
         success {
-            echo "OrderFlow Pipeline SUCCESS (build #${BUILD_NUMBER})"
+            echo """
+            ====================================
+            Pipeline SUCCESS - Build #${BUILD_NUMBER}
+            Commit: ${GIT_SHORT_SHA}
+            Tag: ${IMAGE_TAG}
+            Services: order, inventory, notification
+            ====================================
+            """
         }
+
         failure {
-            echo "OrderFlow Pipeline FAILED (build #${BUILD_NUMBER})"
+            echo """
+            ====================================
+            Pipeline FAILED - Build #${BUILD_NUMBER}
+            Commit: ${GIT_SHORT_SHA}
+            Check stage logs for details.
+            ====================================
+            """
+            // Uncomment for Slack notifications:
+            // slackSend(channel: '#devops-alerts', color: 'danger',
+            //     message: "OrderFlow Pipeline FAILED - Build #${BUILD_NUMBER} (${GIT_SHORT_SHA})")
         }
+
         always {
+            // NUOVO: JUnit report parsing → visualizzazione test nella UI Jenkins
+            sh '''
+                echo "=== Test results directory ==="
+                ls -la test-results/ 2>/dev/null || echo "test-results/ not found"
+                chown -R $(id -u):$(id -g) test-results/ 2>/dev/null || true
+            '''
+            junit allowEmptyResults: true, testResults: 'test-results/*-results.xml'
+            archiveArtifacts artifacts: 'test-results/*.log', allowEmptyArchive: true
+
+            // Cleanup — evoluzione del Giorno 2 (che faceva solo docker rmi + cleanWs)
             sh '''
                 echo "=== Final Cleanup ==="
-                for svc in order-service inventory-service notification-service; do
-                    docker rmi ${PROJECT_NAME}/${svc}:${BUILD_TAG} 2>/dev/null || true
-                    docker rmi ${PROJECT_NAME}/${svc}:latest 2>/dev/null || true
+                # Cleanup test containers from this build
+                for SVC in order inventory notification; do
+                    docker rm -f "test-${SVC}-${BUILD_NUMBER}" 2>/dev/null || true
                 done
+                # Cleanup compose containers and dangling images
+                docker ps -aq --filter "name=orderflow" | xargs -r docker rm -f || true
+                docker image prune -f --filter "until=2h" || true
             '''
-            cleanWs()
         }
     }
 }
+
+ 
